@@ -746,6 +746,125 @@ namespace GooglePlayGames
         }
 
         /// <summary>
+        /// Reports the progress of an achievement (reveal, unlock or increment)
+        /// specifying total number of steps that the user has made.
+        /// </summary>
+        /// <param name='achievementID'>
+        /// The ID of the achievement to unlock, reveal or increment. This can be a raw Google Play
+        /// Games achievement ID (alphanumeric string), or an alias that was previously configured
+        /// by a call to <see cref="AddIdMapping" />.
+        /// </param>
+        /// <param name='steps'>
+        /// Steps of the achievement. If the achievement is standard (not incremental), then
+        /// zero steps will reveal the achievement and steps greater than zero will unlock it.
+        /// If the achievement is incremental, then this value is interpreted
+        /// as the total steps of the achievement's progress that the player should have
+        /// as a result of this call (regardless of the steps they had before). So if the
+        /// player's previous steps was 3 and this call specifies 5, the new progress will
+        /// be 5 (not 8).
+        /// </param>
+        /// <param name='callback'>
+        /// Callback that will be called to report the result of the operation: <c>true</c> on
+        /// success, <c>false</c> otherwise.
+        /// </param>
+		public void ReportProgress(string achievementID, int steps, Action<bool> callback)
+        {
+            if (!IsAuthenticated())
+            {
+                GooglePlayGames.OurUtils.Logger.e(
+                    "ReportProgress can only be called after authentication.");
+                if (callback != null)
+                {
+                    callback.Invoke(false);
+                }
+
+                return;
+            }
+
+            // map ID, if it's in the dictionary
+            GooglePlayGames.OurUtils.Logger.d(
+                "ReportProgress, " + achievementID + ", " + steps);
+            achievementID = MapId(achievementID);
+
+            // if steps is 0, we just want to reveal it
+            if (steps == 0)
+            {
+                GooglePlayGames.OurUtils.Logger.d(
+                    "Steps 0 interpreted as request to reveal.");
+                mClient.RevealAchievement(achievementID, callback);
+                return;
+            }
+
+            // figure out if it's a standard or incremental achievement
+            bool isIncremental = false;
+            int curSteps = 0, totalSteps = 0;
+            Achievement ach = mClient.GetAchievement(achievementID);
+            if (ach == null)
+            {
+                GooglePlayGames.OurUtils.Logger.w(
+                    "Unable to locate achievement " + achievementID);
+                GooglePlayGames.OurUtils.Logger.w(
+                    "As a quick fix, assuming it's standard.");
+                isIncremental = false;
+            }
+            else
+            {
+                isIncremental = ach.IsIncremental;
+                curSteps = ach.CurrentSteps;
+                totalSteps = ach.TotalSteps;
+                GooglePlayGames.OurUtils.Logger.d(
+                    "Achievement is " + (isIncremental ? "INCREMENTAL" : "STANDARD"));
+                if (isIncremental)
+                {
+                    GooglePlayGames.OurUtils.Logger.d(
+                        "Current steps: " + curSteps + "/" + totalSteps);
+                }
+            }
+
+            // do the right thing depending on the achievement type
+            if (isIncremental)
+            {
+                if (steps < 0.0 || steps > totalSteps)
+                {
+                    GooglePlayGames.OurUtils.Logger.e(
+                        "Steps " + steps +
+                        " are out of range [0, totalSteps] = [0, "+totalSteps+"]");
+					if (callback != null)
+					{
+						callback.Invoke(false);
+					}
+
+					return;
+                }
+
+                int targetSteps = steps;
+                int numSteps = targetSteps - curSteps;
+                GooglePlayGames.OurUtils.Logger.d("Target steps: " +
+                    targetSteps + ", cur steps:" + curSteps);
+                GooglePlayGames.OurUtils.Logger.d("Steps to increment: " +
+                    numSteps);
+
+                if (numSteps >= 0)
+                {
+                    mClient.IncrementAchievement(achievementID, numSteps, callback);
+                }
+            }
+            else if (steps > 0)
+            {
+                // unlock it!
+                GooglePlayGames.OurUtils.Logger.d(
+                    "Steps " + steps + " interpreted as UNLOCK.");
+                mClient.UnlockAchievement(achievementID, callback);
+            }
+            else
+            {
+                // not enough to unlock
+                GooglePlayGames.OurUtils.Logger.d("Steps " + steps +
+                    " not enough to unlock non-incremental achievement.");
+            }
+        }
+
+        /// <summary>
         /// Increments an achievement. This is a Play Games extension of the ISocialPlatform API.
         /// </summary>
         /// <param name='achievementID'>
